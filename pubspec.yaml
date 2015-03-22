@@ -1,4 +1,7 @@
-name: websocket
-description: A sample command-line application
+name: test websocket
+description: Client/Server using websocket
+environment:
+  sdk: '>=1.0.0 <2.0.0'
 dependencies:
   args: any
+  browser: any
