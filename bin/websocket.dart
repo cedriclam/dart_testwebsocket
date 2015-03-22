@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:collection';
+import 'package:sqljocky/sqljocky.dart';
 
 class WebSocketsClient {
   String name;
@@ -29,13 +30,29 @@ class ChatMessage {
 class ChatWebSocketsServer {
   // hold all connected clients in this list
   List<WebSocketsClient> _clients = [];
+  Query _preparedInsertQuery;
 
   // chat history
   ListQueue<ChatMessage> _chat;
   static const int MAX_HISTORY = 100;
 
-  ChatWebSocketsServer() {
+  ChatWebSocketsServer(ConnectionPool pool) {
     _chat = new ListQueue<ChatMessage>();
+
+    String selectSql = """
+      SELECT * FROM chat_log ORDER BY created DESC LIMIT 0,100""";
+
+    pool.query(selectSql).then((Results results) {
+      results.forEach((Row row) {
+        var msg = new ChatMessage(row.name.toString(), row.text.toString());
+        _chat.addFirst(msg);
+      });
+    });
+
+    String insertSql = """
+      INSERT INTO chat_log (name, text, created) VALUES (?, ?, NOW())""";
+    pool.prepare(insertSql).then((Query q) => _preparedInsertQuery = q);
+
   }
 
 
@@ -62,6 +79,7 @@ class ChatWebSocketsServer {
 
     } else if (json['type'] == 'post' && client.name.isNotEmpty) {
       ChatMessage record = new ChatMessage(client.name, json['text']);
+      _preparedInsertQuery.execute([record.name, record.text]);
       // keep only last MAX_HISTORY messages
       _chat.addLast(record);
       if (_chat.length > MAX_HISTORY) {
@@ -155,7 +173,15 @@ main(List<String> args) {
     });
 
   } else if (argResults['cmd'] == 'start') {
-    wsServer = new ChatWebSocketsServer();
+    // int Mysql connection
+    ConnectionPool pool = new ConnectionPool(
+        host: '127.0.0.1',
+        port: 3306,
+        user: 'root',
+        password: 'root',
+        db: 'dart_chat');
+
+    wsServer = new ChatWebSocketsServer(pool);
 
     print('My PID: $pid');
     int port = int.parse(argResults['port']);

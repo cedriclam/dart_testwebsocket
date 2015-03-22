@@ -5,3 +5,4 @@ environment:
 dependencies:
   args: any
   browser: any
+  sqljocky: any
