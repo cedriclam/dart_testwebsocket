@@ -84,15 +84,15 @@ class ChatWebSocketsServer {
       _clients.removeAt(_indexByWebSocket(client.ws));
     });
   }
-  
+
   // close connection to all clients
   // this is used only on server shutdown
   Future closeAll() {
     Completer completer = new Completer();
     // make a list of all Future objects returned by close() methods ..
     List<Future> futures = [];
-    _clients.forEach((WebSocketsClient client) =>
-      futures.add(client.ws.close()));
+    _clients.forEach(
+        (WebSocketsClient client) => futures.add(client.ws.close()));
     // ... and wait until all of them complete
     Future.wait(futures).then((_) => completer.complete());
     return completer.future;
@@ -116,6 +116,10 @@ class ChatWebSocketsServer {
     }
     return null;
   }
+}
+
+void kill(int pid, ProcessSignal signal) {
+  Process.run('kill', ['-s', signal.toString(), pid.toString()]);
 }
 
 
@@ -145,14 +149,18 @@ main(List<String> args) {
   if (argResults['help']) {
     print(parser.usage);
   } else if (argResults['cmd'] == 'stop') {
-    // stop server by sending a SIGTERM signal
+    // stop process by sending a SIGTERM signal
+    new File(argResults['pid-file']).readAsString().then((String pid) {
+      kill(int.parse(pid), ProcessSignal.SIGTERM);
+    });
+
   } else if (argResults['cmd'] == 'start') {
     wsServer = new ChatWebSocketsServer();
 
     print('My PID: $pid');
     int port = int.parse(argResults['port']);
     print('Starting WebSocket server');
-    
+
     HttpServer.bind(
         InternetAddress.LOOPBACK_IP_V4,
         port).then((HttpServer server) {
@@ -172,5 +180,24 @@ main(List<String> args) {
         sc.add(request);
       });
     });
+
+    // save processes PID to a file
+    new File(argResults['pid-file']).create(recursive: true).then((File file) {
+      file.writeAsString(pid.toString());
+    });
+
+    void shutdown(ProcessSignal signal) {
+      print('Received signal $signal');
+      Future.wait(
+          [
+              new File(argResults['pid-file']).delete(),
+              httpServer.close(),
+              wsServer.closeAll()]).then((_) => exit(0));
+      // end this process now with code 0
+    }
+
+    ProcessSignal.SIGTERM.watch().listen(shutdown);
+    ProcessSignal.SIGINT.watch().listen(shutdown);
+
   }
 }
